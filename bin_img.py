@@ -13,28 +13,12 @@ def binarize_image(img):
                 img[i,ii,0] = img[i,ii,0]-1
 
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    #plt.figure(2)
-    #plt.imshow(gray,cmap='gray')
-    #plt.title('gray')
 
     hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
     h = hls[:,:,0]
     l = hls[:,:,1]
     s = hls[:,:,2]
 
-    #plt.figure(3)
-    #plt.imshow(h,cmap='gray')
-    #plt.title('H')
-    #plt.figure(4)
-    #plt.imshow(l,cmap='gray')
-    #plt.title('L')
-    #plt.figure(5)
-    #plt.imshow(s,cmap='gray')
-    #plt.title('S')
-
-    s_thresh=(170, 255)
-    sx_thresh=(20, 100)
-#   sobel this one
     sobelx = cv2.Sobel(s, cv2.CV_64F, 1, 0)
     abs_sobelx = np.absolute(sobelx)
     scaled_sobel = np.uint8(255*abs_sobelx/np.max(abs_sobelx))
@@ -48,58 +32,49 @@ def binarize_image(img):
     kernel_right = kernel_right/np.sum(kernel_right) 
     sxleft = cv2.filter2D(scaled_sobel, -1, kernel_left)
     sxright = cv2.filter2D(scaled_sobel, -1, kernel_right)
-    #plt.figure(15)
-    #plt.imshow(sxleft,cmap='gray')
-    #plt.title('SX left')
-
-    #plt.figure(16)
-    #plt.imshow(sxright,cmap='gray')
-    #plt.title('SX right')
-
-    color_sx = np.dstack(( np.zeros_like(sxright), sxright, sxleft))*5
-    #plt.figure(20)
-    #plt.imshow(color_sx)
-    #plt.title('color sx')
 
     res = np.zeros_like(scaled_sobel)
-    res[(sxleft > 5) & (sxright > 5) & (s > 120) & (h < 50)] = 255
-    #plt.figure(30)
-    #plt.imshow(res, cmap='gray')
-    #plt.title('Result')
+    res[(sxleft > 3) & (sxright > 3) & (s > 100) & (h < 50)] = 255
 
 
-    sxbinary = np.zeros_like(scaled_sobel)
-    sxbinary[(scaled_sobel >= sx_thresh[0]) & (scaled_sobel <= sx_thresh[1])] = 1
- 
-    sxbinary = np.zeros_like(scaled_sobel)
-    sxbinary[(scaled_sobel >= sx_thresh[0]) & (scaled_sobel <= sx_thresh[1])] = 1
-    
-    # Threshold color channel
-    s_binary = np.zeros_like(s)
-    s_binary[(s >= s_thresh[0]) & (s <= s_thresh[1])] = 1
-    # Stack each channel
-    color_binary = np.dstack(( np.zeros_like(sxbinary), sxbinary, s_binary)) * 255
-    #plt.figure(6)
-    #plt.imshow(color_binary)
-    #plt.title('Binary')
+    plt.figure(716)
+    plt.imshow(img)
+    plt.title('Sobel left')
 
-    combined_binary = np.zeros_like(sxbinary)
-    combined_binary[(s_binary == 1) | (sxbinary == 1)] = 255
-    blur = cv2.GaussianBlur(combined_binary,(15,15),0)
-    #plt.figure(7)
-    #plt.imshow(blur, cmap='gray')
-    #plt.title('Combined Blured')
+    plt.figure(714)
+    plt.imshow(sxleft, cmap='gray')
+    plt.title('Sobel left')
 
+    plt.figure(711)
+    plt.imshow(sxright, cmap='gray')
+    plt.title('Sobel right')
+
+    plt.figure(712)
+    plt.imshow(s, cmap='gray')
+    plt.title('s')
+
+    plt.figure(713)
+    plt.imshow(h, cmap='gray')
+    plt.title('h')
+
+    plt.figure(710)
+    plt.imshow(res, cmap='gray')
+    plt.title('Binary')
+
+
+    plt.show()
     return res
 
 
 src = np.float32([[274,680],[598,450],[683,450],[1030,680]])
 dst = np.float32([[200,400],[200,50],[600,50],[600,400]])
+
 M = cv2.getPerspectiveTransform(src, dst)
 Minv = cv2.getPerspectiveTransform(dst, src)
 
-ym_per_pix = 30/350 # meters per pixel in y dimension
+ym_per_pix = 75/350 # meters per pixel in y dimension
 xm_per_pix = 3.7/400 # meters per pixel in x dimension
+
 def unwrap_image(img):
     warped = cv2.warpPerspective(img, M, (700,450), flags=cv2.INTER_LINEAR)
     return warped
@@ -245,7 +220,7 @@ class Line():
         #x values for detected line pixels
         self.allx = None  
         #y values for detected line pixels
-        self.buffer = RingBuffer(10)
+        self.buffer = RingBuffer(20)
         self.notdetected = 0
 
     def update(self, x, y):
@@ -282,13 +257,27 @@ class Line():
         aay = np.concatenate(ay)
         return (min(aay),max(aay))
 
+    def get_radius(self):        
+        fit = self.best_fit
+        pos = max(self.ally)
+        rad = (1+(2*fit[0]*pos + fit[1])**2)**(3/2)/abs(2*fit[0])
+        return rad            
+
     def get_vals(self, rang=None):
         if rang is None:
             rang = self.y_range()
         ploty = np.linspace(rang[0], rang[1], rang[1]-rang[0] )
         fit = self.best_fit
         fitx = fit[0]*ploty**2 + fit[1]*ploty + fit[2]
+
         return fitx, ploty            
+
+    def get_val(self, pos):
+        fit = self.best_fit
+        fitx = fit[0]*pos**2 + fit[1]*pos + fit[2]
+
+        return fitx
+
 
 left_lane = Line()
 right_lane = Line()
@@ -311,13 +300,8 @@ def fit_polynomial(binary_warped):
         right_fitx = 1*ploty_right**2 + 1*ploty_right
 
     ## Visualization ##
-    # Colors in the left and right lane regions
     out_img[lefty, leftx] = [255, 0, 0]
     out_img[righty, rightx] = [0, 0, 255]
-
-    # Plots the left and right polynomials on the lane lines
-    #plt.plot(left_fitx, ploty, color='yellow')
-    #plt.plot(right_fitx, ploty, color='yellow')
 
     return out_img, left_fitx, right_fitx, ploty_left, ploty_right
 
@@ -326,33 +310,25 @@ mtx = np.load('data/mtx.npy')
 dist = np.load('data/dist.npy') 
 
 
-#y_eval = np.max(ploty)
-#left_curverad = (1+(2*left_fit_cr[0]*y_eval*ym_per_pix+left_fit_cr[1])**2)**(3/2)/abs(2*left_fit_cr[0])
-#right_curverad = (1+(2*right_fit_cr[0]*y_eval*ym_per_pix+right_fit_cr[1])**2)**(3/2)/abs(2*right_fit_cr[0])
-
-
 
 def process_image(img):
     undist = cv2.undistort(img, mtx, dist, None, mtx)
-    plt.figure(701)
-    plt.imshow(undist)
-    plt.title('Undistorted')
     try:
     
         binar = binarize_image(undist)
-        plt.figure(710)
-        plt.imshow(binar, cmap='gray')
-        plt.title('Binary')
+#        plt.figure(710)
+#        plt.imshow(binar, cmap='gray')
+#        plt.title('Binary')
      
         unwrap = unwrap_image(binar)
-        plt.figure(70)
-        plt.imshow(unwrap, cmap='gray')
-        plt.title('Unwrapped')
+#        plt.figure(70)
+#        plt.imshow(unwrap, cmap='gray')
+#        plt.title('Unwrapped')
     
         out, left_fitx, right_fitx, ploty_left, ploty_right = fit_polynomial(unwrap)
-        plt.figure(90)
-        plt.imshow(out, cmap='gray')
-        plt.title('Unwrapped')
+#        plt.figure(90)
+#        plt.imshow(out, cmap='gray')
+#        plt.title('Unwrapped')
     
         # Create an image to draw the lines on
         warp_zero = np.zeros_like(unwrap).astype(np.uint8)
@@ -366,31 +342,67 @@ def process_image(img):
         # Draw the lane onto the warped blank image
         cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
     
-       #calculate centerline
+        #calculate centerline
         l_range = left_lane.y_range()
         r_range = right_lane.y_range()
+        print(l_range)
+        print(r_range)
         all_range = [ max(l_range[0],r_range[0]),min(l_range[1],r_range[1])]
+        print(all_range)
         xl,yl = left_lane.get_vals(all_range)
         xr,yr = right_lane.get_vals(all_range)
         avg_x = np.zeros_like(xl)
+
         for i in range(0,len(xl)):
             avg_x[i] = (xl[i]+xr[i])/2
-        c_lane = Line()
-        c_lane.update_force(avg_x,yl)
-        xl,yl = c_lane.get_vals()
-        color_warp[np.int_(xl),np.int_(yl)] = [255,0,0]
 
+        c_lane_px = Line()
+        c_lane_px.update_force(avg_x,yl)
+        x,y = c_lane_px.get_vals((0,color_warp.shape[0]-1))
+        print(avg_x)
+        color_warp[np.int_(y),np.int_(x)] = [255,0,0]
+        
+        c_lane = Line()
+        c_lane.update_force(avg_x*xm_per_pix,yl*ym_per_pix)
+        radi = c_lane.get_radius()
+        print(radi)
+
+
+        car_img = np.array([[img.shape[1]/2,img.shape[0]-1]],dtype='float32').reshape((-1, 1, 2))
+        print(car_img)
+        car_warped = cv2.perspectiveTransform(car_img,M)
+        print(car_warped)
+        x_line_car = c_lane.get_val(car_warped[0][0][1]*ym_per_pix)
+        print("X-line-Car: "+ str(x_line_car))
+        print('Car warped: '+str(car_warped[0][0][0]*xm_per_pix))
+        diff = x_line_car-car_warped[0][0][0]*xm_per_pix
+        
+        print('DIFFERENCE: '+ str(diff))
         # Warp the blank back to original image space using inverse perspective matrix (Minv)
         newwarp = cv2.warpPerspective(color_warp, Minv, (img.shape[1], img.shape[0])) 
         # Combine the result with the original image
-        result = cv2.addWeighted(undist, 1, newwarp, 0.3, 0)
- 
+        result = cv2.addWeighted(undist, 0.7, newwarp, 0.3, 0)
+
+        binary = np.dstack((binar,np.zeros_like(binar),np.zeros_like(binar)))
+        result = cv2.addWeighted(result, 0.5, binary, 0.5, 0)
+        font                   = cv2.FONT_HERSHEY_SIMPLEX
+        text_pos= (100,50)
+        fontScale              = 1
+        fontColor              = (255,255,255)
+        lineType               = 2
+        
+        cv2.putText(result,'Radius: ' + str(int(radi)) + ' m;   Diff: '+str(round(diff,2))+' m', 
+            text_pos, 
+            font, 
+            fontScale,
+            fontColor,
+            lineType) 
         return result 
     except Nothing:
         return undist
 
 
-doImage =True
+doImage =False
 if doImage is True:
     foldername = 'test_images/' 
     files = os.listdir(foldername)
@@ -422,7 +434,7 @@ else:
 
     fname ='project_video.mp4' 
     #fname ='harder_challenge_video.mp4' 
-    clip1 = VideoFileClip(fname).subclip(0,1)
+    clip1 = VideoFileClip(fname).subclip(23.9,24)
     white_clip = clip1.fl_image(process_image)
     white_clip.write_videofile('annot_'+fname, audio=False)
     
