@@ -22,8 +22,11 @@ def fit_polynomial(binary_warped, left_lane, right_lane):
         right_fitx = 1*ploty_right**2 + 1*ploty_right
 
     ## Visualization ##
-    out_img[lefty, leftx] = [255, 0, 0]
-    out_img[righty, rightx] = [0, 0, 255]
+    out_img[lefty, leftx] = [255, 150, 150]
+    out_img[righty, rightx] = [150, 150, 255]
+
+    out_img[np.int_(ploty_left), np.int_(left_fitx)] = [255, 0, 0]
+    out_img[np.int_(ploty_right), np.int_(right_fitx)] = [0, 0, 255]
 
     return out_img, left_fitx, right_fitx, ploty_left, ploty_right
 

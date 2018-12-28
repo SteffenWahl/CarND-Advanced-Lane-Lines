@@ -15,7 +15,7 @@ from src.search_around_poly import *
 from src.fit_polynomial import *
 from src.sanity_check import *
 
-
+#load calibration data
 mtx = np.load('data/mtx.npy') 
 dist = np.load('data/dist.npy') 
 
@@ -27,6 +27,8 @@ xm_per_pix = 3.7/400 # meters per pixel in x dimension
 
 # this is the image processing pipeline
 def process_image(img, filename=None, reset=False):
+    global left_lane
+    global right_lane
     if reset is True:
         left_lane = Line()
         right_lane = Line()
@@ -37,7 +39,7 @@ def process_image(img, filename=None, reset=False):
         cv2.imwrite('output_images/undistorted_'+filename, cv2.cvtColor(undist, cv2.COLOR_RGB2BGR))
 
     #1: warp image
-    warped = unwarp_image(undist)
+    warped = warp_image(undist)
     if filename is not None: 
         out_img = warped
         cv2.imwrite('output_images/warped_'+filename, cv2.cvtColor(out_img, cv2.COLOR_RGB2BGR))
@@ -75,7 +77,7 @@ def process_image(img, filename=None, reset=False):
         # Draw the lane onto the warped blank image
         cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
     
-        #calculate centerline
+        #6. curvature of Lane
         l_range = left_lane.y_range()
         r_range = right_lane.y_range()
         all_range = [ max(l_range[0],r_range[0]),min(l_range[1],r_range[1])]
@@ -95,14 +97,15 @@ def process_image(img, filename=None, reset=False):
         c_lane.update_force(avg_x*xm_per_pix,yl*ym_per_pix)
         radi = c_lane.get_radius()
 
-        #calculate offset of vehicle position in lane
+        #7. calculate offset of vehicle position in lane
         car_img = np.array([[img.shape[1]/2,img.shape[0]-1]],dtype='float32').reshape((-1, 1, 2))
         car_warped = cv2.perspectiveTransform(car_img,M)
         x_line_car = c_lane.get_val(car_warped[0][0][1]*ym_per_pix)
         diff = x_line_car-car_warped[0][0][0]*xm_per_pix
         
-        # Warp the blank back to original image space using inverse perspective matrix (Minv)
-        newwarp = cv2.warpPerspective(color_warp, Minv, (img.shape[1], img.shape[0])) 
+        # Warp the blank back to original image space
+        newwarp = unwarp_image(color_warp, (img.shape[1], img.shape[0])) 
+
         # Combine the result with the original image
         result = cv2.addWeighted(undist, 0.7, newwarp, 0.3, 0)
 
